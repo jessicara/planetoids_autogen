@@ -44,7 +44,7 @@ local add_from_storage_planetoids = function()
 	end
 	for i=1,#storage.planets,1 do table.insert(planetoidgen.planets,storage.planets[i]) end
 	planetoidgen.generate_index()
-	minetest.log("action", "[planetoid_autogen] Added " .. tostring(#planetoidgen.planets) .. " planets from storage.")
+	minetest.log("action", "[planetoid_autogen] Added " .. tostring(#storage.planets) .. " planets from storage.")
 	-- storage = nil -- don't need it anymore
 	return true
 end
@@ -226,6 +226,7 @@ end
 
 local have_storage = false
 
+local added_planets = { }
 local stars = { }
 local system_stars = { }
 
@@ -233,6 +234,7 @@ local add_planetoid = function(t)
 	if is_planet_valid(t) then
 		--table.insert(planetoidgen.planets, t)
 		planetoidgen.register_planet(t)
+		table.insert(added_planets, t)
 		minetest.log("action", "[planetoid_autogen] Added planetoid \"" .. t.name .. "\" at (" .. tostring(t.pos.x) .. ", " .. tostring(t.pos.y) .. ", " .. tostring(t.pos.z) .. ").")
 		return true
 	else
@@ -466,7 +468,7 @@ local do_generate = function()
 	ins_planets()
 	minetest.log("action","[planetoid_autogen] done with randomly scattered planets")
 	if not always_regenerate then
-		storage.planets = planetoidgen.planets
+		storage.planets = added_planets
 		storage.stars = stars
 		storage.system_stars = system_stars
 		storage.last_write_check = os.time()

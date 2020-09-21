@@ -43,7 +43,7 @@ local add_from_storage_planetoids = function()
 		return false
 	end
 	for i=1,#storage.planets,1 do table.insert(planetoidgen.planets,storage.planets[i]) end
-	planetoidgen.generate_index()
+	--planetoidgen.generate_index()
 	minetest.log("action", "[planetoid_autogen] Added " .. tostring(#storage.planets) .. " planets from storage.")
 	-- storage = nil -- don't need it anymore
 	return true
@@ -211,16 +211,16 @@ local is_planet_valid = function(p)
 		return false
 	end
 	-- do their potentially faster check first?
-	if planetoidgen.get_planet_at_pos(p.pos, p.radius + gap_min) then
+	--[[if planetoidgen.get_planet_at_pos(p.pos, p.radius + gap_min) then
 		minetest.log("verbose", "[planetoid_autogen] Rejecting next planet because it is too close to another planet. This is normal.")
 		return false
-	end
-	--[[for i=1,#planetoidgen.planets,1 do
+	end]]--
+	for i=1,#planetoidgen.planets,1 do
 		if vector.distance(p.pos, planetoidgen.planets[i].pos) < p.radius + planetoidgen.planets[i].radius + gap_min then
-			minetest.log("warning", "[planetoid_autogen] Rejecting next planet because it is too close to another planet called \"" .. planetoidgen.planets[i].name .. "\" r " .. planetoidgen.planets[i].radius .. ".")
+			minetest.log("info", "[planetoid_autogen] Rejecting next planet because it is too close to another planet called \"" .. planetoidgen.planets[i].name .. "\" r " .. planetoidgen.planets[i].radius .. ", this is probably normal.")
 			return false
 		end
-	end]]--
+	end
 	return true
 end
 

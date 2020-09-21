@@ -19,29 +19,41 @@ skybox.register({
 local always_regenerate = minetest.settings:get_bool("planetoids_autogen.always_regenerate") or false -- this prevents storage functioning
 local storage_format = minetest.settings:get("planetoids_autogen.storage_format") or "mod_storage"
 
-local storageref
-if storage_format == "mod_storage" then storageref = minetest.get_mod_storage()
+local storage_ref = { }
+if storage_format == "mod_storage" then storage_ref = minetest.get_mod_storage()
 elseif storage_format == "json" then
 end
-local storage = storageref:to_table()
+local storage = minetest.deserialize(storage_ref:get_string("data"))
+if not storage then storage = { } end
 
-if not storage.planets then storage.planets = {} end -- store planets
-if not storage.systems then storage.systems = {} end -- store systems, their boundaries and star positions
+--if not storage.planets then storage.planets = {} end -- store planets
+--if not storage.systems then storage.systems = {} end -- store systems, their boundaries and star positions
 
 local add_from_storage_planetoids = function()
-	if not storage.last_write_check or always_regenerate then return false end
+	if always_regenerate then
+		minetest.log("action", "[planetoid_autogen] Not adding stored planetoids, always_regenerate is on.")
+		return false
+	end
+	if not storage.last_write_check then
+		minetest.log("action", "[planetoid_autogen] Not adding stored planetoids, none to add.")
+		return false
+	end
+	if not storage.planets then
+		minetest.log("warning", "[planetoid_autogen] mod_storage has .last_write_check set but has no planets stored.")
+		return false
+	end
 	for i=1,#storage.planets,1 do table.insert(planetoidgen.planets,storage.planets[i]) end
-	planetoidgen.regenerate_index()
-	minetest.log("action", "[planetoids_autogen] Added " .. tostring(#planetoidgen.planets) .. " planets from storage.")
+	planetoidgen.generate_index()
+	minetest.log("action", "[planetoid_autogen] Added " .. tostring(#planetoidgen.planets) .. " planets from storage.")
 	-- storage = nil -- don't need it anymore
 	return true
 end
 
 -- could end here if other mods don't add anything to the lists
 
-local max_planets = minetest.settings:get("planetoids_autogen.max_planets") or 256 -- random scatter stage
-local max_system_planets = minetest.settings:get("planetoids_autogen.max_system_planets") or 64
-local max_systems = minetest.settings:get("planetoids_autogen.max_systems") or 16
+local max_planets = minetest.settings:get("planetoids_autogen.max_planets") or 16 -- random scatter stage
+local max_system_planets = minetest.settings:get("planetoids_autogen.max_system_planets") or 16
+local max_systems = minetest.settings:get("planetoids_autogen.max_systems") or 8
 
 local sun_min = minetest.settings:get("planetoids_autogen.sun_min_radius") or 1024
 local sun_max = minetest.settings:get("planetoids_autogen.sun_max_radius") or 2048
@@ -221,9 +233,6 @@ local add_planetoid = function(t)
 	if is_planet_valid(t) then
 		--table.insert(planetoidgen.planets, t)
 		planetoidgen.register_planet(t)
-		if not have_storage and not always_regenerate then
-			table.insert(storage.planets,t)
-		end
 		minetest.log("action", "[planetoid_autogen] Added planetoid \"" .. t.name .. "\" at (" .. tostring(t.pos.x) .. ", " .. tostring(t.pos.y) .. ", " .. tostring(t.pos.z) .. ").")
 		return true
 	else
@@ -305,7 +314,7 @@ local ins_planets = function()
 			ins_failures = ins_failures + 1
 		end
 	end
-	minetest.log("action", "[planetoid_autogen] Added " .. tostring(addcount) .. " planets.")
+	minetest.log("action", "[planetoid_autogen] Added " .. tostring(addcount) .. " randomly scattered planets.")
 end
 --ins_planets()
 
@@ -392,7 +401,8 @@ local ins_star_planet = function(s, from_dist, n)
 		},
 		radius = rr,
 		name = "",
-		type = ""
+		type = "",
+		airshell = true
 	}
 	local closest_sun, d = find_closest_star(p.pos)
 	if d < dist_hot then
@@ -405,8 +415,8 @@ local ins_star_planet = function(s, from_dist, n)
 		p.type = random_name_from_weighted_list_with_r(planetoid_autogen.cold.list, p.radius)
 	end
 	p.name = closest_sun.name .. "-" .. tostring(d) .. "-r" .. tostring(p.radius) .. "-" .. p.type .. "-" .. tostring(n)
-	if add_planetoid(p) then return true end
-	return false
+	if add_planetoid(p) then return true, m end
+	return false, nil
 end
 
 local ins_system_planets = function(s, from_dist)
@@ -434,27 +444,37 @@ local do_generate = function()
 	while (f < max_ins_failures_system and c < max_systems) do
 		local success, g = ins_system_star()
 		if success then
-			table.insert(gaps, g)
-			c = c + 1
+			if g == nil then
+				minetest.log("warning", "[planetoid_autogen] ins_system_star() should not return nil distance when success is true.")
+			else
+				table.insert(gaps, g)
+				c = c + 1
+			end
 		else
 			f = f + 1
 		end
 	end
 	minetest.log("action","done with system stars")
 	-- planets around stars
+	if c ~= #system_stars then minetest.log("warning","[planetoid_autogen] something is wrong with the star counting (c ~= #system_stars).") end
+	if #system_stars ~= #gaps then minetest.log("warning","[planetoid_autogen] something is wrong with the star counting (#gaps ~= #system_stars).") end
 	if c > 0 then
 		for i=1,#system_stars,1 do ins_system_planets(stars[i], gaps[i]) end
 	end
-	minetest.log("action","done with system planets")
+	minetest.log("action","[planetoid_autogen] done with system planets")
 	-- random scatter planets
 	ins_planets()
-	minetest.log("action","done with randomly scattered planets")
+	minetest.log("action","[planetoid_autogen] done with randomly scattered planets")
 	if not always_regenerate then
 		storage.planets = planetoidgen.planets
 		storage.stars = stars
 		storage.system_stars = system_stars
+		storage.last_write_check = os.time()
 		if storage_format == "mod_storage" then
-			storage_ref:from_table(storage)
+			if type(storage) ~= "table" then
+				minetest.log("warning", "[planetoid_autogen] for some reason storage isn't a table.")
+			end
+			storage_ref:set_string("data", minetest.serialize(storage))
 		elseif storage_format == "json" then
 		end
 	end
